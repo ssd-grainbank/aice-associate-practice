@@ -87,9 +87,12 @@ def needs_more(lines):
 
 
 def ask_cell(n):
-    """[n]: 칸에 코드 입력. 한 줄이 완성되면 엔터 한 번으로 바로 실행됩니다."""
+    """[n]: 칸에 코드 입력. 한 줄이 완성되면 엔터 한 번으로 바로 실행됩니다.
+
+    아무것도 안 친 채 엔터 두 번이면 빈 문자열을 돌려줍니다(포기 = 정답 보기)."""
     print(f"{CYAN}[{n}]:{R} ", end="", flush=True)
     lines = []
+    empties = 0
     while True:
         try:
             raw = input()
@@ -98,8 +101,12 @@ def ask_cell(n):
         if raw.strip() == "":
             if lines:          # 빈 줄 = 지금까지 친 것 실행
                 break
-            print(f"{CYAN}[{n}]:{R} ", end="", flush=True)  # 아직 아무것도 안 썼으면 다시 받는다
+            empties += 1
+            if empties >= 2:   # 빈 채로 엔터 두 번 = 포기
+                break
+            print(f"{CYAN}[{n}]:{R} ", end="", flush=True)  # 한 번 더 기회
             continue
+        empties = 0
         lines.append(raw)
         if not needs_more(lines):   # 문장이 완성됐으면 바로 실행
             break
@@ -170,7 +177,8 @@ def main():
   · 실제 시험과 같습니다. 보기는 없습니다. 코드를 직접 칩니다.
   · {CYAN}[n]:{R} 칸에 코드를 치고 {B}엔터 두 번{R}이면 실행됩니다.
   · 앞 문제의 결과가 뒤 문제로 이어집니다. 순서대로 푸세요.
-  · 모르면 빈 채로 엔터 두 번 → 정답과 해설이 나옵니다.
+  · 틀리면 정답이 나올 때까지 같은 문제를 다시 풉니다.
+  · 모르면 빈 채로 엔터 두 번 → 정답과 해설이 나오고 다음으로 넘어갑니다.
 {'  · ' + YEL + '학습 모드: 정답이 먼저 표시됩니다.' + R if show_answer else ''}
 """)
     pause(f"  {B}엔터를 누르면 시작합니다.{R} ")
@@ -185,16 +193,19 @@ def main():
                 print(f"  {DIM}{ln}{R}")
             print()
 
-        code = ask_cell(i)
-        ns["__code__"] = code  # 채점 함수가 "실제로 친 코드"를 확인할 수 있게 전달
+        tries = 0
+        while True:  # 맞히거나 포기할 때까지 같은 문제를 다시 받는다
+            code = ask_cell(i)
+            ns["__code__"] = code  # 채점 함수가 "실제로 친 코드"를 확인할 수 있게 전달
 
-        if not code.strip():
-            print(f"{YEL}  ── 넘어감. 정답 ──{R}")
-            for ln in q["answer"].split("\n"):
-                print(f"  {DIM}{ln}{R}")
-            run_cell(q["answer"], ns)
-            log.append((q, 0, "미응답"))
-        else:
+            if not code.strip():
+                print(f"{YEL}  ── 넘어감. 정답 ──{R}")
+                for ln in q["answer"].split("\n"):
+                    print(f"  {DIM}{ln}{R}")
+                run_cell(q["answer"], ns)  # 뒤 문제가 이어지도록 정답을 실행
+                log.append((q, 0, "미응답" if tries == 0 else "포기"))
+                break
+
             value, error = run_cell(code, ns)
             if error:
                 print(f"{RED}  ✗ 오류: {error}{R}")
@@ -215,12 +226,11 @@ def main():
                 earned += q["score"]
                 print(f"{GREEN}  ✓ 정답  +{q['score']}점{R}")
                 log.append((q, q["score"], "정답"))
-            else:
-                print(f"{RED}  ✗ 아직 아닙니다{R}")
-                for ln in q["answer"].split("\n"):
-                    print(f"  {DIM}모범답안: {ln}{R}")
-                log.append((q, 0, "오답"))
-                run_cell(q["answer"], ns)  # 뒤 문제가 이어지도록 정답을 실행
+                break
+
+            tries += 1
+            print(f"{RED}  ✗ 아직 아닙니다 — 다시 풀어보세요.{R}")
+            print(f"  {DIM}모르겠으면 빈 채로 엔터 두 번 → 정답이 나옵니다.{R}\n")
 
         print(f"  {DIM}{q['why']}{R}\n")
         pause(f"  {DIM}엔터로 다음{R} ")
