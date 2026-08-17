@@ -186,6 +186,7 @@ def main():
             print()
 
         code = ask_cell(i)
+        ns["__code__"] = code  # 채점 함수가 "실제로 친 코드"를 확인할 수 있게 전달
 
         if not code.strip():
             print(f"{YEL}  ── 넘어감. 정답 ──{R}")
