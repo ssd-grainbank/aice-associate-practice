@@ -35,8 +35,17 @@ def rows(ns, n, frame="df"):
 
 
 def typed(ns, *pats):
-    """사용자가 실제로 친 코드에 모든 패턴(정규식)이 들어 있으면 True."""
+    """사용자가 실제로 친 코드에 모든 패턴(정규식)이 들어 있으면 True.
+
+    같은 문제에서 여러 번에 나눠 친 코드를 합쳐서 봅니다."""
     code = str(ns.get("__code__", ""))
+    return all(re.search(p, code) for p in pats)
+
+
+def typed_last(ns, *pats):
+    """방금 친 코드에만 패턴이 있는지. '~하지 말 것' 같은 부정 검사용 —
+    누적 코드로 검사하면 앞선 실수 때문에 올바른 재시도까지 영영 틀리게 된다."""
+    code = str(ns.get("__last_code__", ns.get("__code__", "")))
     return all(re.search(p, code) for p in pats)
 
 
@@ -429,8 +438,8 @@ QUESTIONS = [
       "신경망은 스케일에 민감합니다. 표준화가 사실상 필수입니다.", "customers.csv"),
     Q(83, 9, M, "X_test를 같은 scaler로 변환해 X_test_s에 저장하시오. (fit 하지 말 것)",
       "X_test_s = scaler.transform(X_test)",
-      lambda ns: ns.get("X_test_s") is not None and typed(ns, r"\.transform\s*\(")
-                 and not typed(ns, r"fit_transform|\.fit\s*\("),
+      lambda ns: ns.get("X_test_s") is not None and typed_last(ns, r"\.transform\s*\(")
+                 and not typed_last(ns, r"fit_transform|\.fit\s*\("),
       "검증 데이터에는 transform만 씁니다. fit하면 데이터 누수입니다. 시험 단골 함정입니다.", "customers.csv"),
     Q(84, 9, M, "MLPClassifier(신경망)를 불러와 학습시키시오. (max_iter=500, random_state=42)",
       "from sklearn.neural_network import MLPClassifier\nmodel = MLPClassifier(max_iter=500, random_state=42)\nmodel.fit(X_train_s, y_train)",

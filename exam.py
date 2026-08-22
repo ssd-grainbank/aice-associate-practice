@@ -87,7 +87,7 @@ def needs_more(lines):
 
 
 def ask_cell(n):
-    """[n]: 칸에 코드 입력. 한 줄이 완성되면 엔터 한 번으로 바로 실행됩니다.
+    """[n]: 칸에 코드 입력. 빈 줄에서 엔터를 쳐야 실행됩니다(여러 줄 답 가능).
 
     아무것도 안 친 채 엔터 두 번이면 빈 문자열을 돌려줍니다(포기 = 정답 보기)."""
     print(f"{CYAN}[{n}]:{R} ", end="", flush=True)
@@ -108,8 +108,8 @@ def ask_cell(n):
             continue
         empties = 0
         lines.append(raw)
-        if not needs_more(lines):   # 문장이 완성됐으면 바로 실행
-            break
+        # 문장이 끝났어도 계속 받는다 — 빈 줄이 와야 제출.
+        # (read_csv 한 줄 + shape 한 줄처럼 여러 문장짜리 답을 칠 수 있게)
         print(f"{CYAN}   :{R} ", end="", flush=True)
     print()
     return "\n".join(lines)
@@ -175,15 +175,22 @@ def main():
 {rule()}
   · {len(questions)}문항 / {total_score}점 / 권장 20분
   · 실제 시험과 같습니다. 보기는 없습니다. 코드를 직접 칩니다.
-  · {CYAN}[n]:{R} 칸에 코드를 치고 {B}엔터 두 번{R}이면 실행됩니다.
+  · {CYAN}[n]:{R} 칸에 코드를 치고, 다 쳤으면 {B}빈 줄에서 엔터{R} → 실행됩니다.
+  · 여러 줄 답도 됩니다. 줄마다 엔터로 이어 치고, 마지막에 빈 줄 한 번.
   · 앞 문제의 결과가 뒤 문제로 이어집니다. 순서대로 푸세요.
-  · 틀리면 정답이 나올 때까지 같은 문제를 다시 풉니다.
-  · 모르면 빈 채로 엔터 두 번 → 정답과 해설이 나오고 다음으로 넘어갑니다.
+  · 3번 틀리면 정답과 해설이 나오고 다음으로 넘어갑니다.
+  · 모르면 빈 채로 엔터 두 번 → 바로 정답을 보고 넘어갑니다.
 {'  · ' + YEL + '학습 모드: 정답이 먼저 표시됩니다.' + R if show_answer else ''}
 """)
     pause(f"  {B}엔터를 누르면 시작합니다.{R} ")
 
+    timed_out = False
     for i, q in enumerate(questions, 1):
+        if time.time() - start > limit:   # 권장 시간 초과 — 남은 문제는 미응답 처리
+            timed_out = True
+            for rest in questions[i - 1:]:
+                log.append((rest, 0, "시간초과"))
+            break
         clear()
         render(q, i, len(questions), limit - (time.time() - start))
 
@@ -194,9 +201,13 @@ def main():
             print()
 
         tries = 0
-        while True:  # 맞히거나 포기할 때까지 같은 문제를 다시 받는다
+        attempts = []  # 이 문제에서 오류 없이 실행된 코드 누적 (채점용)
+        while True:  # 맞히거나, 3번 틀리거나, 포기할 때까지 같은 문제를 다시 받는다
             code = ask_cell(i)
-            ns["__code__"] = code  # 채점 함수가 "실제로 친 코드"를 확인할 수 있게 전달
+            # 채점 함수용: __code__는 이 문제에서 친 코드 전체(여러 번에 나눠 쳐도 인정),
+            # __last_code__는 방금 친 코드만 (fit 금지 같은 부정 검사용)
+            ns["__last_code__"] = code
+            ns["__code__"] = "\n".join(attempts + [code])
 
             if not code.strip():
                 print(f"{YEL}  ── 넘어감. 정답 ──{R}")
@@ -207,12 +218,17 @@ def main():
                 break
 
             value, error = run_cell(code, ns)
+            if not error:
+                attempts.append(code)   # 오류 없이 실행된 코드만 누적 채점에 반영
             if error:
                 print(f"{RED}  ✗ 오류: {error}{R}")
             elif value is not None:
                 print(f"{DIM}  ── 출력 ──{R}")
-                for ln in str(value).split("\n")[:15]:
+                out = str(value).split("\n")
+                for ln in out[:40]:
                     print(f"  {ln}")
+                if len(out) > 40:
+                    print(f"  {DIM}… ({len(out) - 40}줄 생략){R}")
 
             ok = False
             if not error:
@@ -229,7 +245,15 @@ def main():
                 break
 
             tries += 1
-            print(f"{RED}  ✗ 아직 아닙니다 — 다시 풀어보세요.{R}")
+            if tries >= 3:
+                print(f"{RED}  ✗ 3회 오답 — 정답을 보고 넘어갑니다.{R}")
+                print(f"{YEL}  ── 정답 ──{R}")
+                for ln in q["answer"].split("\n"):
+                    print(f"  {DIM}{ln}{R}")
+                run_cell(q["answer"], ns)  # 뒤 문제가 이어지도록 정답을 실행
+                log.append((q, 0, "오답"))
+                break
+            print(f"{RED}  ✗ 아직 아닙니다 — 다시 풀어보세요. ({tries}/3){R}")
             print(f"  {DIM}모르겠으면 빈 채로 엔터 두 번 → 정답이 나옵니다.{R}\n")
 
         print(f"  {DIM}{q['why']}{R}\n")
@@ -238,6 +262,8 @@ def main():
     used = int(time.time() - start)
     pct = round(earned / total_score * 100)
     clear()
+    if timed_out:
+        print(f"\n{RED}  권장 시간(20분)을 넘겨 남은 문제는 미응답 처리했습니다.{R}")
     print(f"\n{B}세트 {n} 채점 결과 — {SET_TITLES[n - 1]}{R}\n{rule('═')}")
     for q, got, mark in log:
         c = GREEN if got else RED
